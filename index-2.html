@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="es">
+<head>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#222222">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Control Corralón</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f4f4;color:#171717;font-family:Arial,sans-serif}
+header{background:#222;color:#fff;padding:18px;font-size:23px;font-weight:700}
+nav{display:flex;background:#fff;border-bottom:1px solid #ddd}nav button{flex:1;border:0;background:#fff;padding:15px;font-weight:700;font-size:16px}nav button.active{border-bottom:3px solid #222}
+main{max-width:700px;margin:auto;padding:16px}.tab{display:none}.tab.active{display:block}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}.card{background:#fff;border:1px solid #ddd;border-radius:12px;padding:15px}.small{color:#666;font-size:13px}.big{font-size:23px;font-weight:700;margin-top:5px}
+.primary{width:100%;padding:14px;border:0;border-radius:10px;background:#222;color:#fff;font-size:17px;font-weight:700;margin:14px 0}
+.item{background:#fff;border:1px solid #ddd;border-radius:10px;padding:12px;margin:8px 0}
+input,select{width:100%;padding:12px;border:1px solid #ccc;border-radius:8px;font-size:16px;margin:5px 0 10px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button.edit{border:0;background:#eee;padding:8px;border-radius:7px;margin-top:8px}.delete{border:0;background:#fee2e2;padding:8px;border-radius:7px}
+dialog{border:0;border-radius:14px;width:min(94%,500px);padding:0;box-shadow:0 10px 40px #0004}dialog::backdrop{background:#0007}.modal{padding:18px}.close{float:right;border:0;background:#eee;border-radius:50%;width:32px;height:32px}
+.profit{font-weight:700}.empty{text-align:center;color:#777;padding:25px}
+</style></head>
+<body>
+<header>Control Corralón</header>
+<nav><button id="bInicio" class="active">Inicio</button><button id="bProductos">Productos</button><button id="bCalculadora">Calculadora</button></nav>
+<main>
+<section id="inicio" class="tab active">
+<h2>Inicio</h2>
+<div class="cards">
+<div class="card"><div class="small">Ventas de hoy</div><div id="ventas" class="big">$0</div></div>
+<div class="card"><div class="small">Costos</div><div id="costos" class="big">$0</div></div>
+<div class="card"><div class="small">Ganancia</div><div id="ganancia" class="big">$0</div></div>
+<div class="card"><div class="small">Ventas registradas</div><div id="cantidad" class="big">0</div></div>
+</div>
+<button class="primary" onclick="ventaDialog.showModal()">➕ Registrar venta</button>
+<button class="primary" onclick="compartir()">🖼️ Compartir resumen como imagen</button>
+<h3>Ventas de hoy</h3><div id="listaVentas"></div>
+</section>
+
+<section id="calculadora" class="tab">
+<h2>Calculadora</h2>
+<div class="item">
+<label>Costo</label><input id="ccosto" type="number" min="0" placeholder="0" oninput="calcularRendimiento()">
+<label>Bolsones</label><input id="cbolsones" type="number" min="0" step="1" placeholder="0" oninput="calcularRendimiento()">
+<label>Bolsitas</label><input id="cbolsitas" type="number" min="0" step="1" value="0" placeholder="0" oninput="calcularRendimiento()">
+<label>Costo bolsón</label><input id="cbvacio" type="number" min="0" value="7500" oninput="calcularRendimiento()">
+<label>Costo bolsita</label><input id="csmall" type="number" min="0" value="125" oninput="calcularRendimiento()">
+</div>
+<div id="resultadoRendimiento" class="item"><p>Completá los datos para calcular.</p></div>
+<button class="edit" type="button" onclick="limpiarRendimiento()">Limpiar</button>
+</section>
+
+<section id="productos" class="tab">
+<h2>Productos</h2>
+<form id="prodForm" class="item">
+<input id="nombre" placeholder="Nombre del producto" required>
+<div class="row"><input id="costo" type="number" placeholder="Costo" required><input id="precio" type="number" placeholder="Precio de venta" required></div>
+<button class="primary" style="margin:0">Agregar producto</button>
+</form>
+<div id="listaProductos"></div>
+</section>
+</main>
+
+<dialog id="ventaDialog"><div class="modal">
+<button class="close" onclick="ventaDialog.close()">×</button><h2>Registrar venta</h2>
+<label>Buscar producto</label><input id="busquedaProducto" type="search" placeholder="Buscar por nombre..." autocomplete="off" oninput="filtrarProductos()"><div id="resultadosProductos" style="max-height:260px;overflow:auto;margin-top:4px"></div><input id="vp" type="hidden">
+<label>Cantidad</label><input id="vq" type="number" min="1" value="1" oninput="calcularVenta()">
+<label>Precio normal</label><input id="vnormal" readonly>
+<label>Precio de esta venta</label><input id="vprecio" type="number" oninput="calcularVenta()">
+<div class="item"><div>Total vendido: <b id="vtotal">$0</b></div><div>Costo: <b id="vcosto">$0</b></div><div>Ganancia: <b id="vganancia">$0</b></div></div>
+<button class="primary" onclick="registrarVenta()">Guardar venta</button>
+</div></dialog>
+
+<dialog id="editarDialog"><div class="modal">
+<button class="close" onclick="editarDialog.close()">×</button><h2>Editar producto</h2>
+<input id="enombre"><div class="row"><input id="ecosto" type="number"><input id="eprecio" type="number"></div>
+<button class="primary" onclick="guardarEdicion()">Guardar cambios</button>
+</div></dialog>
+
+<script>
+const KEY='corralon_simple_v2';let db=JSON.parse(localStorage.getItem(KEY)||'{\"products\":[],\"sales\":[]}');let editId=null;
+const baseProducts=[
+['Vigueta 2,00 m',7200,9400],['Vigueta 2,20 m',8000,10400],['Vigueta 2,40 m',8800,11500],['Vigueta 2,60 m',9400,12300],['Vigueta 2,80 m',9900,12900],['Vigueta 3,00 m',11000,14300],['Vigueta 3,20 m',12100,15800],['Vigueta 3,40 m',13200,17200],['Vigueta 3,60 m',14300,18600],['Vigueta 3,80 m',15000,19500],['Vigueta 4,00 m',16500,21500],['Vigueta 4,20 m',17600,22900],['Vigueta 4,40 m',21000,27300],['Vigueta 4,60 m',23100,30100],['Vigueta 4,80 m',24200,31500],['Vigueta 5,00 m',25300,32800],['Vigueta 5,20 m',27500,35800],['Vigueta 5,40 m',31000,40300],['Vigueta 5,60 m',32000,41600],['Vigueta 5,80 m',33000,42900],['Vigueta 6,00 m',37500,48800],
+['Cemento',6784,9000],['Cal',6128,7000],['Alambre',3500,6000],['Varilla 6',5500,8000],['Varilla 8',9300,13000],['Varilla 10',14500,18000],['Varilla 12',21000,26000],
+['Hueco 8',477,750],['Hueco 12',601,860],['Weber',7300,11000],['Yeso',16000,20000],['Telgopor 10',3300,4100],['Malla 6 15x25 5x2',38000,50000],
+['Arena bolsón',36483,50000],['Arena bolsita x1',850,2000],['Arena bolsitas x15',12750,22000],['Arena bolsitas x30',25500,44000],
+['Piedra bolsón',66389,87000],['Piedra bolsita x1',1597,3500],['Piedra bolsitas x15',23955,40000],['Piedra bolsitas x30',47910,80000],
+['Ceresita 1 kg',4266,6000],['Ceresita 4 kg',11913,17000],['Ceresita 10 kg',25342,35000],['Ceresita 20 kg',45889,55000],
+['Tacurú 1 lt',10998,15000],['Tacurú 4 lts',39530,50000],['Tacurú 10 lts',91049,105000],['Tacurú 20 lts',174900,250000]
+];
+// Carga/actualiza la lista base sin borrar ventas ni productos agregados manualmente.
+baseProducts.forEach((bp,i)=>{
+  const existente=db.products.find(x=>x.name===bp[0]);
+  if(existente){ existente.cost=bp[1]; existente.sale=bp[2]; }
+  else db.products.push({id:Date.now()+i+Math.random(),name:bp[0],cost:bp[1],sale:bp[2]});
+});
+localStorage.setItem(KEY,JSON.stringify(db));
+
+const money=n=>new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(n||0);
+const today=()=>new Date().toISOString().slice(0,10);function save(){localStorage.setItem(KEY,JSON.stringify(db));render()}
+bInicio.onclick=()=>show('inicio');bProductos.onclick=()=>show('productos');bCalculadora.onclick=()=>show('calculadora');
+function show(id){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.getElementById(id).classList.add('active');bInicio.classList.toggle('active',id==='inicio');bProductos.classList.toggle('active',id==='productos');bCalculadora.classList.toggle('active',id==='calculadora')}
+function calcularRendimiento(){
+ const total=+ccosto.value||0,n=+cbolsones.value||0,extra=+cbolsitas.value||0,eb=+cbvacio.value||0,es=+csmall.value||0;
+ const bolsitasPorBolson=40;
+ const totalBolsitas=(n*bolsitasPorBolson)+extra;
+ if(total<=0||n<=0){
+   resultadoRendimiento.innerHTML='<p>Completá Costo y Bolsones.</p>';
+   return;
+ }
+ const materialBolson=total/n;
+ const costoBolson=materialBolson+eb;
+ const materialBolsita=total/totalBolsitas;
+ const costoBolsita=materialBolsita+es;
+ resultadoRendimiento.innerHTML='<div style="font-size:20px;line-height:2">'+
+ '<b>Costo bolsón:</b> '+money(costoBolson)+'<br>'+
+ '<b>Costo bolsita:</b> '+money(costoBolsita)+'</div>';
+}
+
+function limpiarRendimiento(){ccosto.value='';cbolsones.value='';cbolsitas.value='0';cbvacio.value='7500';csmall.value='125';calcularRendimiento()}
+
+prodForm.onsubmit=e=>{e.preventDefault();db.products.push({id:Date.now(),name:nombre.value,cost:+costo.value,sale:+precio.value});e.target.reset();save()};
+function filtrarProductos(){
+ const q=(busquedaProducto.value||'').trim().toLowerCase();
+ if(!q){resultadosProductos.innerHTML='';return;}
+ const lista=db.products.filter(p=>String(p.name).toLowerCase().includes(q));
+ resultadosProductos.innerHTML=lista.length
+   ? lista.map(p=>`<button type="button" class="edit" style="display:block;width:100%;text-align:left;padding:12px;margin:4px 0;font-size:16px" onclick="seleccionarProducto(${p.id})">${esc(p.name)} — ${money(p.sale)}</button>`).join('')
+   : '<div style="padding:8px;color:#666">No se encontró el producto.</div>';
+}
+function seleccionarProducto(id){vp.value=id;let p=db.products.find(x=>x.id==id);if(!p)return;busquedaProducto.value=p.name;vnormal.value=p.sale;vprecio.value=p.sale;resultadosProductos.innerHTML='';calcularVenta()}
+function actualizarPrecio(){let p=db.products.find(x=>x.id==vp.value);vnormal.value=p?p.sale:'';vprecio.value=p?p.sale:'';calcularVenta()}
+function calcularVenta(){let p=db.products.find(x=>x.id==vp.value),q=+vq.value||0,s=+vprecio.value||0;if(!p)return;vtotal.textContent=money(q*s);vcosto.textContent=money(q*p.cost);vganancia.textContent=money(q*s-q*p.cost)}
+function registrarVenta(){let p=db.products.find(x=>x.id==vp.value);if(!p)return;let q=+vq.value,s=+vprecio.value;if(q<=0||s<0)return;db.sales.push({id:Date.now(),date:today(),product:p.name,qty:q,unit:s,cost:p.cost*q,sale:s*q});ventaDialog.close();save()}
+function eliminarVenta(id){db.sales=db.sales.filter(x=>x.id!=id);save()}
+function editarProducto(id){let p=db.products.find(x=>x.id==id);editId=id;enombre.value=p.name;ecosto.value=p.cost;eprecio.value=p.sale;editarDialog.showModal()}
+function guardarEdicion(){let p=db.products.find(x=>x.id==editId);p.name=enombre.value;p.cost=+ecosto.value;p.sale=+eprecio.value;editarDialog.close();save()}
+function eliminarProducto(id){if(confirm('¿Eliminar este producto?')){db.products=db.products.filter(x=>x.id!=id);save()}}
+async function compartir(){
+ const s=db.sales.filter(x=>x.date===today()),v=s.reduce((a,x)=>a+x.sale,0),c=s.reduce((a,x)=>a+x.cost,0),g=v-c;
+ const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
+ canvas.width=1080;canvas.height=900;
+ ctx.fillStyle='#f4f4f4';ctx.fillRect(0,0,canvas.width,canvas.height);
+ ctx.fillStyle='#222';ctx.fillRect(0,0,canvas.width,145);
+ ctx.fillStyle='#fff';ctx.font='bold 48px Arial';ctx.fillText('Control Corralón',60,92);
+ ctx.fillStyle='#222';ctx.font='bold 38px Arial';ctx.fillText('Resumen del día',60,220);
+ ctx.fillStyle='#666';ctx.font='28px Arial';ctx.fillText(new Date().toLocaleDateString('es-AR'),60,265);
+ const rows=[['Ventas',money(v)],['Costos',money(c)],['Ganancia',money(g)]];
+ let y=350;
+ rows.forEach((r,i)=>{
+   ctx.fillStyle='#fff';ctx.beginPath();ctx.roundRect(50,y-55,980,105,18);ctx.fill();
+   ctx.fillStyle='#666';ctx.font='30px Arial';ctx.fillText(r[0],85,y);
+   ctx.fillStyle='#222';ctx.font='bold 38px Arial';ctx.fillText(r[1],700,y);
+   y+=145;
+ });
+ ctx.fillStyle='#666';ctx.font='24px Arial';ctx.fillText('Generado desde Control Corralón',60,840);
+ canvas.toBlob(async blob=>{
+   if(!blob)return;
+   const file=new File([blob],'resumen-corralon.png',{type:'image/png'});
+   if(navigator.canShare && navigator.canShare({files:[file]})){
+     try{await navigator.share({files:[file],title:'Resumen Control Corralón'});return}catch(e){}
+   }
+   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='resumen-corralon.png';a.click();URL.revokeObjectURL(url);
+   alert('Se generó la imagen. Desde la galería/descargas podés compartirla por WhatsApp.');
+ },'image/png');
+}
+function render(){
+function llenarProductos(filtro=''){ const q=String(filtro).trim().toLowerCase(); const actual=vp.value; const lista=db.products.filter(p=>!q||String(p.name).toLowerCase().includes(q)); vp.innerHTML='<option value="">Elegí un producto</option>'+lista.map(p=>`<option value="${p.id}">${esc(p.name)} — ${money(p.sale)}</option>`).join(''); if(lista.some(p=>String(p.id)===String(actual))) vp.value=actual; }
+filtrarProductos();
+let s=db.sales.filter(x=>x.date===today()),v=s.reduce((a,x)=>a+x.sale,0),c=s.reduce((a,x)=>a+x.cost,0);ventas.textContent=money(v);costos.textContent=money(c);ganancia.textContent=money(v-c);cantidad.textContent=s.length;
+listaVentas.innerHTML=s.length?s.slice().reverse().map(x=>`<div class="item"><b>${x.qty} × ${esc(x.product)}</b><br>${money(x.sale)} · costo ${money(x.cost)} · <span class="profit">ganancia ${money(x.sale-x.cost)}</span><br><button class="delete" onclick="eliminarVenta(${x.id})">Eliminar</button></div>`).join(''):'<div class="empty">Todavía no hay ventas hoy.</div>';
+listaProductos.innerHTML=db.products.length?db.products.map(p=>`<div class="item"><b>${esc(p.name)}</b><br><span class="small">Costo: ${money(p.cost)} · Venta: ${money(p.sale)} · Ganancia: ${money(p.sale-p.cost)}</span><br><button class="edit" onclick="editarProducto(${p.id})">Editar</button> <button class="delete" onclick="eliminarProducto(${p.id})">Eliminar</button></div>`).join(''):'<div class="empty">Agregá tus productos.</div>';
+}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+render();
+</script><script>if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(()=>{});}</script>
+</body></html>
